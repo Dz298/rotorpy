@@ -87,6 +87,8 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
     time    = [0]
     state   = [copy.deepcopy(initial_state)]
     state[0]['wind'] = wind_profile.update(0, state[0]['x'])   # TODO: move this line elsewhere so that other objects that don't have wind as a state can work here. 
+    state[0]['accel'] = np.array([0, 0, 0])
+    state[0]['gyro'] = np.array([0, 0, 0])
     imu_measurements = []
     mocap_measurements = []
     imu_gt = []
@@ -114,6 +116,8 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
         time.append(time[-1] + t_step)
         state[-1]['wind'] = wind_profile.update(time[-1], state[-1]['x'])
         state.append(vehicle.step(state[-1], control[-1], t_step))
+        state[-1]['accel'] = imu_measurements[-1]['accel']
+        state[-1]['gyro'] = imu_measurements[-1]['gyro']
         flat.append(trajectory.update(time[-1]))
         mocap_measurements.append(mocap.measurement(state[-1], with_noise=True, with_artifacts=mocap.with_artifacts))
         state_estimate.append(estimator.step(state[-1], control[-1], imu_measurements[-1], mocap_measurements[-1]))
