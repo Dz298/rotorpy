@@ -109,6 +109,24 @@ class Multirotor(object):
         self.drag_matrix = np.array([[self.c_Dx,    0,          0],
                                      [0,            self.c_Dy,  0],
                                      [0,            0,          self.c_Dz]])
+        self.aero_model = 'rotorpy'
+        
+        # Check if cd1_x exists in quad_params, if not set all related values to 0
+        if 'cd1_x' in quad_params and quad_params['cd1_x'] is not None:
+            self.aero_model = 'other'
+            self.cdz_h = quad_params.get('cdz_h', 0)
+            self.cd1x = quad_params['cd1_x']
+            self.cd1y = quad_params['cd1_y']
+            self.cd1z = quad_params['cd1_z']
+            self.drag_matrix = np.array([[self.cd1x,    0,          0],
+                                         [0,            self.cd1y,  0],
+                                         [0,            0,          self.cd1z]])
+        else:
+            self.cdz_h = 0
+            self.cd1x = 0
+            self.cd1y = 0
+            self.cd1z = 0
+
         self.g = 9.81 # m/s^2
 
         self.inv_inertia = inv(self.inertia)
@@ -276,8 +294,13 @@ class Multirotor(object):
         
         # Add in aero wrenches (if applicable)
         if self.aero:
-            # Parasitic drag force acting at the CoM
-            D = -Multirotor._norm(body_airspeed_vector)*self.drag_matrix@body_airspeed_vector
+            if self.aero_model == 'rotorpy':
+                # Parasitic drag force acting at the CoM
+                D = -Multirotor._norm(body_airspeed_vector)*self.drag_matrix@body_airspeed_vector
+            else:
+                # Parasitic drag force acting at the CoM
+                D = -self.drag_matrix@body_airspeed_vector
+                D[-1] += self.cdz_h*(body_airspeed_vector[0]**2 + body_airspeed_vector[1]**2)
             # Rotor drag (aka H force) acting at each propeller hub.
             H = -rotor_speeds*(self.rotor_drag_matrix@local_airspeeds)
             # Pitching flapping moment acting at each propeller hub.

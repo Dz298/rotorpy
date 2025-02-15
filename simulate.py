@@ -116,8 +116,8 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
         time.append(time[-1] + t_step)
         state[-1]['wind'] = wind_profile.update(time[-1], state[-1]['x'])
         state.append(vehicle.step(state[-1], control[-1], t_step))
-        state[-1]['accel'] = imu_measurements[-1]['accel']
-        state[-1]['gyro'] = imu_measurements[-1]['gyro']
+        state[-1]['accel'] = imu_gt[-1]['accel']
+        state[-1]['gyro'] = imu_gt[-1]['gyro']
         flat.append(trajectory.update(time[-1]))
         mocap_measurements.append(mocap.measurement(state[-1], with_noise=True, with_artifacts=mocap.with_artifacts))
         state_estimate.append(estimator.step(state[-1], control[-1], imu_measurements[-1], mocap_measurements[-1]))
