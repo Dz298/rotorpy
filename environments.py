@@ -23,6 +23,8 @@ class Environment():
                        controller,              # controller object, must be specified.
                        trajectory,              # trajectory object, must be specified.
                        wind_profile = None,     # wind profile object, if none is supplied it will choose no wind. 
+                       ext_force = None,        # external force applied to the vehicle, if none is supplied it will be zero
+                       ext_torque = None,       # external torque applied to the vehicle, if none is supplied it will be zero
                        imu = None,              # imu sensor object, if none is supplied it will choose a default IMU sensor.
                        mocap = None,            # mocap sensor object, if none is supplied it will choose a default mocap.
                        world        = None,     # The world object
@@ -52,6 +54,16 @@ class Environment():
             self.wind_profile = NoWind()
         else:
             self.wind_profile = wind_profile
+
+        if ext_force is None:
+            self.ext_force = np.array([0,0,0])
+        else:
+            self.ext_force = ext_force
+
+        if ext_torque is None:
+            self.ext_torque = np.array([0,0,0])
+        else:
+            self.ext_torque = ext_torque
         
         if imu is None:
             # In the event of specified IMU, default to 0 bias with white noise with default parameters as specified below. 
@@ -126,6 +138,8 @@ class Environment():
                                                                                                                     self.safety_margin,
                                                                                                                     self.use_mocap,
                                                                                                                     terminate=self.terminate,
+                                                                                                                    ext_force=self.ext_force,
+                                                                                                                    ext_torque=self.ext_torque,
                                                                                                                     )
         if verbose:
             # Print relevant statistics or simulator status indicators here

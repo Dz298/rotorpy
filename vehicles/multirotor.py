@@ -179,7 +179,7 @@ class Multirotor(object):
 
         # Form autonomous ODE for constant inputs and integrate one time step.
         def s_dot_fn(t, s):
-            return self._s_dot_fn(t, s, cmd_rotor_speeds)
+            return self._s_dot_fn(t, s, cmd_rotor_speeds,state['ext_force'],state['ext_torque'])
         s = Multirotor._pack_state(state)
         
         s_dot = s_dot_fn(0, s)
@@ -202,7 +202,7 @@ class Multirotor(object):
 
         # Form autonomous ODE for constant inputs and integrate one time step.
         def s_dot_fn(t, s):
-            return self._s_dot_fn(t, s, cmd_rotor_speeds)
+            return self._s_dot_fn(t, s, cmd_rotor_speeds,state['ext_force'],state['ext_torque'])
         s = Multirotor._pack_state(state)
 
         # Option 1 - RK45 integration
@@ -222,7 +222,7 @@ class Multirotor(object):
 
         return state
 
-    def _s_dot_fn(self, t, s, cmd_rotor_speeds):
+    def _s_dot_fn(self, t, s, cmd_rotor_speeds, ext_force, ext_torque):
         """
         Compute derivative of state for quadrotor given fixed control inputs as
         an autonomous ODE.
@@ -233,7 +233,6 @@ class Multirotor(object):
         rotor_speeds = state['rotor_speeds']
         inertial_velocity = state['v']
         wind_velocity = state['wind']
-
         R = Rotation.from_quat(state['q']).as_matrix()
 
         # Rotor speed derivative
@@ -255,12 +254,12 @@ class Multirotor(object):
         Ftot = R@FtotB
 
         # Velocity derivative.
-        v_dot = (self.weight + Ftot) / self.mass
+        v_dot = (self.weight + Ftot + ext_force) / self.mass
 
         # Angular velocity derivative.
         w = state['w']
         w_hat = Multirotor.hat_map(w)
-        w_dot = self.inv_inertia @ (MtotB - w_hat @ (self.inertia @ w))
+        w_dot = self.inv_inertia @ (MtotB + ext_torque - w_hat @ (self.inertia @ w))
 
         # NOTE: the wind dynamics are currently handled in the wind_profile object. 
         # The line below doesn't do anything, as the wind state is assigned elsewhere. 

@@ -15,7 +15,7 @@ class ExitStatus(Enum):
     FLY_AWAY     = 'Failure: Your quadrotor is out of control; it flew away with a position error greater than 20 meters.'
     COLLISION    = 'Failure: Your quadrotor collided with an object.'
 
-def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile, imu, mocap, estimator, t_final, t_step, safety_margin, use_mocap, terminate=None):
+def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile, imu, mocap, estimator, t_final, t_step, safety_margin, use_mocap, terminate=None, ext_force=np.array([0,0,0]),ext_torque=np.array([0,0,0])):
     """
     Perform a vehicle simulation and return the numerical results.
 
@@ -38,6 +38,8 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
         mocap, a MotionCapture object that provides noisy measurements of pose and twist with artifacts. 
         use_mocap, a boolean to determine in noisy measurements from mocap should be used for quadrotor control
         estimator, an estimator object that provides estimates of a portion or all of the vehicle state.
+        ext_force, external force applied to the vehicle, shape=(3,)
+        ext_torque, external torque applied to the vehicle, shape=(3,)
 
     Outputs:
         time, seconds, shape=(N,)
@@ -89,6 +91,8 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
     state[0]['wind'] = wind_profile.update(0, state[0]['x'])   # TODO: move this line elsewhere so that other objects that don't have wind as a state can work here. 
     state[0]['accel'] = np.array([0, 0, 0])
     state[0]['gyro'] = np.array([0, 0, 0])
+    state[0]['ext_force'] = ext_force # TODO: Now this is constant
+    state[0]['ext_torque'] = ext_torque
     imu_measurements = []
     mocap_measurements = []
     imu_gt = []
@@ -115,9 +119,13 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
             break
         time.append(time[-1] + t_step)
         state[-1]['wind'] = wind_profile.update(time[-1], state[-1]['x'])
+        state[-1]['ext_force'] = ext_force 
+        state[-1]['ext_torque'] = ext_torque 
         state.append(vehicle.step(state[-1], control[-1], t_step))
         state[-1]['accel'] = imu_gt[-1]['accel']
         state[-1]['gyro'] = imu_gt[-1]['gyro']
+        state[-1]['ext_force'] = ext_force 
+        state[-1]['ext_torque'] = ext_torque 
         flat.append(trajectory.update(time[-1]))
         mocap_measurements.append(mocap.measurement(state[-1], with_noise=True, with_artifacts=mocap.with_artifacts))
         state_estimate.append(estimator.step(state[-1], control[-1], imu_measurements[-1], mocap_measurements[-1]))

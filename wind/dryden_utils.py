@@ -113,12 +113,12 @@ if __name__=="__main__":
 
     t = 100.0
     dt = 0.05
-    x_mean = 0.0
-    y_mean = 1.0
-    z_mean = 0.0
-    x_sigma = 10.0
-    y_sigma = 0.0
-    z_sigma = 70.0
+    x_mean = np.random.uniform(low=-3, high=3)
+    y_mean = np.random.uniform(low=-3, high=3)
+    z_mean = np.random.uniform(low=-3, high=3)
+    x_sigma = np.random.uniform(low=30, high=60)
+    y_sigma = np.random.uniform(low=30, high=60)
+    z_sigma = np.random.uniform(low=30, high=60)
 
     plt.rcParams.update({
         "text.usetex": True,
