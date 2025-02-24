@@ -126,6 +126,12 @@ class Multirotor(object):
             self.cd1x = 0
             self.cd1y = 0
             self.cd1z = 0
+        
+        # rotor efficiency
+        if 'rotor_efficiency' in quad_params:
+            self.rotor_efficiency = quad_params['rotor_efficiency']
+        else:
+            self.rotor_efficiency = np.ones(self.num_rotors)
 
         self.g = 9.81 # m/s^2
 
@@ -196,6 +202,9 @@ class Multirotor(object):
         """
 
         cmd_rotor_speeds = self.get_cmd_motor_speeds(state, control)
+
+        # Compensate for rotor efficiency
+        cmd_rotor_speeds = cmd_rotor_speeds * self.rotor_efficiency
 
         # The true motor speeds can not fall below min and max speeds.
         cmd_rotor_speeds = np.clip(cmd_rotor_speeds, self.rotor_speed_min, self.rotor_speed_max) 
