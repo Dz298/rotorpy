@@ -72,6 +72,7 @@ class Multirotor(object):
         self.Ixy             = quad_params['Ixy']  # kg*m^2
         self.Ixz             = quad_params['Ixz']  # kg*m^2
         self.Iyz             = quad_params['Iyz']  # kg*m^2
+        self.arm_length      = quad_params['arm_length']  # meters
 
         # Frame parameters
         self.c_Dx            = quad_params['c_Dx']  # drag coeff, N/(m/s)**2
@@ -204,7 +205,7 @@ class Multirotor(object):
         cmd_rotor_speeds = self.get_cmd_motor_speeds(state, control)
 
         # Compensate for rotor efficiency
-        cmd_rotor_speeds = cmd_rotor_speeds * self.rotor_efficiency
+        cmd_rotor_speeds = cmd_rotor_speeds
 
         # The true motor speeds can not fall below min and max speeds.
         cmd_rotor_speeds = np.clip(cmd_rotor_speeds, self.rotor_speed_min, self.rotor_speed_max) 
@@ -297,8 +298,13 @@ class Multirotor(object):
         # Get the local airspeeds for each rotor
         local_airspeeds = body_airspeed_vector[:, np.newaxis] + Multirotor.hat_map(body_rates)@(self.rotor_geometry.T) 
 
-        # Compute the thrust of each rotor, assuming that the rotors all point in the body z direction!
-        T = np.array([0, 0, self.k_eta])[:, np.newaxis]*rotor_speeds**2
+        # Scale k_eta for each rotor based on rotor efficiency
+        k_eta_scaled = self.k_eta * self.rotor_efficiency
+        # Scale k_m for each rotor based on rotor efficiency
+        k_m_scaled = self.k_m * self.rotor_efficiency
+
+        # Compute the thrust of each rotor with scaled k_eta
+        T = np.array([0, 0, 1])[:, np.newaxis] * (k_eta_scaled * rotor_speeds**2)
         
         # Add in aero wrenches (if applicable)
         if self.aero:
@@ -309,10 +315,10 @@ class Multirotor(object):
                 # Parasitic drag force acting at the CoM
                 D = -self.drag_matrix@body_airspeed_vector
                 D[-1] += self.cdz_h*(body_airspeed_vector[0]**2 + body_airspeed_vector[1]**2)
-            # Rotor drag (aka H force) acting at each propeller hub.
-            H = -rotor_speeds*(self.rotor_drag_matrix@local_airspeeds)
-            # Pitching flapping moment acting at each propeller hub.
-            M_flap = -self.k_flap*rotor_speeds*((Multirotor.hat_map(local_airspeeds.T).transpose(2, 0, 1))@np.array([0,0,1])).T
+            # Rotor drag (aka H force) acting at each propeller hub - scale with rotor efficiency
+            H = -(rotor_speeds * self.rotor_efficiency)*(self.rotor_drag_matrix@local_airspeeds)
+            # Pitching flapping moment acting at each propeller hub - scale with rotor efficiency
+            M_flap = -self.k_flap*(rotor_speeds * self.rotor_efficiency)*((Multirotor.hat_map(local_airspeeds.T).transpose(2, 0, 1))@np.array([0,0,1])).T
         else:
             D = np.zeros(3,)
             H = np.zeros((3,self.num_rotors))
@@ -320,7 +326,8 @@ class Multirotor(object):
 
         # Compute the moments due to the rotor thrusts, rotor drag (if applicable), and rotor drag torques
         M_force = -np.einsum('ijk, ik->j', Multirotor.hat_map(self.rotor_geometry), T+H)
-        M_yaw = self.rotor_dir*(np.array([0, 0, self.k_m])[:, np.newaxis]*rotor_speeds**2)
+        # Use scaled k_m for yaw moment
+        M_yaw = self.rotor_dir*(np.array([0, 0, 1])[:, np.newaxis] * (k_m_scaled * rotor_speeds**2))
 
         # Sum all elements to compute the total body wrench
         FtotB = np.sum(T + H, axis=1) + D
