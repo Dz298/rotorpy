@@ -316,9 +316,9 @@ class Multirotor(object):
                 D = -self.drag_matrix@body_airspeed_vector
                 D[-1] += self.cdz_h*(body_airspeed_vector[0]**2 + body_airspeed_vector[1]**2)
             # Rotor drag (aka H force) acting at each propeller hub - scale with rotor efficiency
-            H = -(rotor_speeds * self.rotor_efficiency)*(self.rotor_drag_matrix@local_airspeeds)
+            H = -(rotor_speeds)*(self.rotor_drag_matrix@local_airspeeds)
             # Pitching flapping moment acting at each propeller hub - scale with rotor efficiency
-            M_flap = -self.k_flap*(rotor_speeds * self.rotor_efficiency)*((Multirotor.hat_map(local_airspeeds.T).transpose(2, 0, 1))@np.array([0,0,1])).T
+            M_flap = -self.k_flap*(rotor_speeds)*((Multirotor.hat_map(local_airspeeds.T).transpose(2, 0, 1))@np.array([0,0,1])).T
         else:
             D = np.zeros(3,)
             H = np.zeros((3,self.num_rotors))

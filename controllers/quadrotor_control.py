@@ -173,3 +173,6 @@ class SE3Control(object):
                          'cmd_acc': cmd_acc}
         
         return control_input
+    
+    def update_trajectory(self, trajectory):
+        pass
