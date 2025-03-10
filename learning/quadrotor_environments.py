@@ -51,7 +51,9 @@ class QuadrotorEnv(gym.Env):
                                   'q': np.array([0, 0, 0, 1]), # [i,j,k,w]
                                   'w': np.zeros(3,),
                                   'wind': np.array([0,0,0]),  # Since wind is handled elsewhere, this value is overwritten
-                                  'rotor_speeds': np.array([1788.53, 1788.53, 1788.53, 1788.53])},
+                                  'ext_force': np.array([0,0,0]),
+                                  'ext_torque': np.array([0,0,0]),
+                                  'rotor_speeds': np.array([0,0,0,0])},
                  control_mode = 'cmd_vel',
                  reward_fn = hover_reward,            
                  quad_params = crazyflie_params,                   
@@ -201,7 +203,7 @@ class QuadrotorEnv(gym.Env):
                                     'q': np.array([0, 0, 0, 1]), # [i,j,k,w]
                                     'w': np.zeros(3,),
                                     'wind': np.array([0,0,0]),  # Since wind is handled elsewhere, this value is overwritten
-                                    'rotor_speeds': np.array([1788.53, 1788.53, 1788.53, 1788.53])}
+                                    'rotor_speeds': np.array([0,0,0,0])}
                                     })
                         'pos_bound': the min/max position region for random placement. 
                         'vel_bound': the min/max velocity region for random placement
@@ -230,17 +232,19 @@ class QuadrotorEnv(gym.Env):
                      'q': np.array([0, 0, 0, 1]), # [i,j,k,w]
                      'w': np.zeros(3,),
                      'wind': np.array([0,0,0]),  # Since wind is handled elsewhere, this value is overwritten
-                     'rotor_speeds': np.array([1788.53, 1788.53, 1788.53, 1788.53])}
+                     'ext_force': np.array([0,0,0]),
+                     'ext_torque': np.array([0,0,0]),
+                     'rotor_speeds': np.array([0,0,0,0])}
 
         elif options['initial_state'] == 'deterministic':
             state = self.initial_state
         
         elif isinstance(options['initial_state'], dict):
             # Ensure the correct keys are in dict.  
-            if all(key in options['initial_state'] for key in ('x', 'v', 'q', 'w', 'wind', 'rotor_speeds')):
+            if all(key in options['initial_state'] for key in ('x', 'v', 'q', 'w', 'wind', 'ext_force', 'ext_torque', 'rotor_speeds')):
                 state = options['initial_state']
             else:
-                raise KeyError("Missing state keys in your initial_state. You must specify values for ('x', 'v', 'q', 'w', 'wind', 'rotor_speeds')")
+                raise KeyError("Missing state keys in your initial_state. You must specify values for ('x', 'v', 'q', 'w', 'wind', 'ext_force', 'ext_torque', 'rotor_speeds')")
 
         else:
             raise ValueError("You must either specify 'random', 'deterministic', or provide a dict containing your desired initial state.")

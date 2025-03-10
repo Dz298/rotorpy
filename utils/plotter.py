@@ -16,7 +16,7 @@ class Plotter():
     def __init__(self, results, world):
 
         (self.time, self.x, self.x_des, self.v, 
-        self.v_des, self.q, self.q_des, self.w, 
+        self.v_des, self.q, self.q_des, self.w, self.w_des, 
         self.s, self.s_des, self.M, self.T, self.wind,
         self.accel, self.gyro, self.accel_gt,
         self.x_mc, self.v_mc, self.q_mc, self.w_mc, 
@@ -117,12 +117,15 @@ class Plotter():
         ax.grid('major')
         ax.set_title('Commands')
         ax = axes[1]
-        ax.plot(self.time, self.M[:,0], 'r.', self.time, self.M[:,1], 'g.', self.time, self.M[:,2], 'b.')
-        ax.legend(('x', 'y', 'z'))
-        ax.set_ylabel('moment, N*m')
+        ax.plot(self.time, self.w_des[:,0], 'r--', self.time, self.w_des[:,1], 'g--', self.time, self.w_des[:,2], 'b--')
+        ax.plot(self.time, self.w[:,0], 'r', self.time, self.w[:,1], 'g', self.time, self.w[:,2], 'b')
+        ax.legend(('desx', 'desy', 'desz','x', 'y', 'z'))
+        ax.set_ylabel('Angular velocity, rad/s')
         ax.grid('major')
         ax = axes[2]
-        ax.plot(self.time, self.T, 'k.')
+        ax.plot(self.time, self.T, 'k--')
+        ax.plot(self.time, self.accel[:,2],'k')
+        ax.legend(('cmd_thrust','mass-norm thrust'))
         ax.set_ylabel('thrust, N')
         ax.set_xlabel('time, s')
         ax.grid('major')
@@ -241,6 +244,8 @@ class Plotter():
         M = control['cmd_moment']
         T = control['cmd_thrust']
 
+        w_des = control['cmd_w']
+
         wind = state['wind']
 
         accel   = imu_measurements['accel']
@@ -262,7 +267,7 @@ class Plotter():
             sd = []
             self.estimator_exists = False
 
-        return (time, x, x_des, v, v_des, q, q_des, w, s, s_des, M, T, wind, accel, gyro, accel_gt, x_mc, v_mc, q_mc, w_mc, filter_state, covariance, sd)
+        return (time, x, x_des, v, v_des, q, q_des, w, w_des, s, s_des, M, T, wind, accel, gyro, accel_gt, x_mc, v_mc, q_mc, w_mc, filter_state, covariance, sd)
 
 def plot_map(ax, world_data, equal_aspect=True, color=None, edgecolor=None, alpha=1, world_bounds=True, axes=True):
     """

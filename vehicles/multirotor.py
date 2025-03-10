@@ -221,16 +221,18 @@ class Multirotor(object):
         # Option 2 - Euler integration
         # s = s + s_dot_fn(0, s) * t_step  # first argument doesn't matter. It's time invariant model
 
-        state = Multirotor._unpack_state(s)
+        state_unpacked = Multirotor._unpack_state(s)
 
         # Re-normalize unit quaternion.
-        state['q'] = state['q'] / norm(state['q'])
+        state_unpacked['q'] = state_unpacked['q'] / norm(state_unpacked['q'])
 
         # Add noise to the motor speed measurement
-        state['rotor_speeds'] += np.random.normal(scale=np.abs(self.motor_noise), size=(self.num_rotors,))
-        state['rotor_speeds'] = np.clip(state['rotor_speeds'], self.rotor_speed_min, self.rotor_speed_max)
+        state_unpacked['rotor_speeds'] += np.random.normal(scale=np.abs(self.motor_noise), size=(self.num_rotors,))
+        state_unpacked['rotor_speeds'] = np.clip(state_unpacked['rotor_speeds'], self.rotor_speed_min, self.rotor_speed_max)
+        state_unpacked['ext_force'] = state['ext_force']
+        state_unpacked['ext_torque'] = state['ext_torque']
 
-        return state
+        return state_unpacked
 
     def _s_dot_fn(self, t, s, cmd_rotor_speeds, ext_force, ext_torque):
         """
