@@ -74,6 +74,15 @@ class Multirotor(object):
         self.Iyz             = quad_params['Iyz']  # kg*m^2
         self.arm_length      = quad_params['arm_length']  # meters
 
+        if 'com' in quad_params:
+            self.com = quad_params['com']
+        else:
+            self.com = np.array([0.0, 0.0, 0.0])
+
+        # Payload parameters
+        self.payload_mass = 0 # kg
+        self.payload_position = np.array([0.0, 0.0, 0.0]) # m
+
         # Frame parameters
         self.c_Dx            = quad_params['c_Dx']  # drag coeff, N/(m/s)**2
         self.c_Dy            = quad_params['c_Dy']  # drag coeff, N/(m/s)**2
@@ -166,12 +175,13 @@ class Multirotor(object):
         The rotor_geometry is an array of length (n,3), where n is the number of rotors. 
         Each row corresponds to the position vector of the rotor relative to the CoM. 
         """
-
+        
         self.rotor_geometry = np.array([]).reshape(0,3)
         for rotor in self.rotor_pos:
-            r = self.rotor_pos[rotor]
+            # Adjust rotor position relative to the COM
+            r = self.rotor_pos[rotor] - self.com
             self.rotor_geometry = np.vstack([self.rotor_geometry, r])
-
+        
         return
 
     def statedot(self, state, control, t_step):
@@ -512,3 +522,183 @@ class Multirotor(object):
         """
         state = {'x':s[0:3], 'v':s[3:6], 'q':s[6:10], 'w':s[10:13], 'wind':s[13:16], 'rotor_speeds':s[16:]}
         return state
+
+    def update_payload(self, payload_mass, payload_position, payload_inertia=None):
+        """
+        Updates the payload parameters.
+        
+        Parameters:
+            payload_mass: Mass of the payload in kg
+            payload_position: Position of the payload's COM in the body frame
+            payload_inertia: Inertia tensor of the payload about its COM (optional)
+        """
+
+        # Update payload parameters
+        self.payload_mass = payload_mass
+        self.payload_position = payload_position
+        self.payload_inertia = payload_inertia
+
+    def attach_payload(self):
+        """
+        Updates the center of mass and inertia when a payload is attached.
+        
+        Parameters:
+            payload_mass: Mass of the payload in kg
+            payload_position: Position of the payload's COM in the body frame
+            payload_inertia: Inertia tensor of the payload about its COM (optional)
+        """
+        if self.payload_mass == 0:
+            return np.zeros(3)
+        
+        # Store original values
+        original_mass = self.mass
+        original_com = self.com.copy()
+        original_inertia = self.inertia.copy()
+        
+        # Calculate new total mass
+        total_mass = original_mass + self.payload_mass
+        
+        # Calculate new COM position using weighted average
+        new_com = (original_mass * original_com + self.payload_mass * self.payload_position) / total_mass
+        
+        # Update mass and COM
+        self.mass = total_mass
+        self.com = new_com
+        # Update inertia tensor
+        
+        # 1. Shift the original inertia tensor to the new COM
+        r_original = original_com - new_com  # Vector from new COM to original COM
+        r_squared = np.sum(r_original**2)
+        r_outer = np.outer(r_original, r_original)
+        
+        # Apply parallel axis theorem to shift original inertia to new COM
+        shifted_original_inertia = original_inertia - original_mass * (r_squared * np.eye(3) - r_outer)
+        
+        # 2. Add the payload's contribution to the inertia
+        if self.payload_inertia is not None:
+            # If payload inertia is provided, shift it to the new COM
+            r_payload = self.payload_position - new_com  # Vector from new COM to payload COM
+            r_squared = np.sum(r_payload**2)
+            r_outer = np.outer(r_payload, r_payload)
+            
+            # Apply parallel axis theorem to shift payload inertia to new COM
+            shifted_payload_inertia = self.payload_inertia + self.payload_mass * (r_squared * np.eye(3) - r_outer)
+            
+            # Add to get total inertia
+            self.inertia = shifted_original_inertia + shifted_payload_inertia
+        else:
+            # If no payload inertia provided, assume point mass
+            r_payload = self.payload_position - new_com
+            r_squared = np.sum(r_payload**2)
+            r_outer = np.outer(r_payload, r_payload)
+            
+            # Point mass inertia contribution
+            payload_inertia_contribution = self.payload_mass * (r_squared * np.eye(3) - r_outer)
+            
+            # Add to get total inertia
+            self.inertia = shifted_original_inertia + payload_inertia_contribution
+        
+        # Update inverse inertia
+        self.inv_inertia = np.linalg.inv(self.inertia)
+        
+        # Re-extract geometry with updated COM
+        self.extract_geometry()
+        
+        # Update weight vector
+        self.weight = np.array([0, 0, -self.mass*self.g])
+        
+        # Update control allocation matrix if needed
+        # This is necessary because rotor positions relative to COM have changed
+        k = self.k_m/self.k_eta
+        self.f_to_TM = np.vstack((np.ones((1,self.num_rotors)),
+                                 np.hstack([np.cross(self.rotor_pos[key] - self.com,np.array([0,0,1])).reshape(-1,1)[0:2] 
+                                 for key in self.rotor_pos]), 
+                                 (k * self.rotor_dir).reshape(1,-1)))
+        self.TM_to_f = np.linalg.inv(self.f_to_TM)
+        
+        return new_com - original_com  # Return the COM shift
+    
+    def detach_payload(self):
+        """
+        Detaches the payload from the vehicle and restores original properties.
+        
+        This method:
+        1. Restores the original mass, COM, and inertia
+        2. Updates all dependent properties (weight, control allocation, etc.)
+        3. Resets payload parameters
+        
+        Returns:
+            The COM shift vector (original_com - previous_com)
+        """
+        if self.payload_mass == 0:
+            return np.zeros(3)  # No payload to detach
+        
+        # Store current COM for calculating shift
+        previous_com = self.com.copy()
+        
+        # Store payload info for return value
+        detached_payload_mass = self.payload_mass
+        detached_payload_position = self.payload_position.copy()
+        
+        # Restore original mass
+        original_mass = self.mass - self.payload_mass
+        self.mass = original_mass
+        
+        # Recalculate COM without payload
+        if original_mass > 0:
+            # Calculate original COM
+            self.com = (self.mass * self.com - self.payload_mass * self.payload_position) / original_mass
+        
+        # Recalculate inertia tensor
+        # 1. Remove payload contribution from inertia
+        if self.payload_inertia is not None:
+            # If payload inertia was provided, remove its shifted contribution
+            r_payload = self.payload_position - previous_com
+            r_squared = np.sum(r_payload**2)
+            r_outer = np.outer(r_payload, r_payload)
+            
+            # Remove shifted payload inertia
+            shifted_payload_inertia = self.payload_inertia + self.payload_mass * (r_squared * np.eye(3) - r_outer)
+            self.inertia = self.inertia - shifted_payload_inertia
+        else:
+            # If payload was a point mass, remove its contribution
+            r_payload = self.payload_position - previous_com
+            r_squared = np.sum(r_payload**2)
+            r_outer = np.outer(r_payload, r_payload)
+            
+            # Remove point mass inertia contribution
+            payload_inertia_contribution = self.payload_mass * (r_squared * np.eye(3) - r_outer)
+            self.inertia = self.inertia - payload_inertia_contribution
+        
+        # 2. Shift the inertia tensor to the new COM
+        r_shift = previous_com - self.com  # Vector from new COM to previous COM
+        r_squared = np.sum(r_shift**2)
+        r_outer = np.outer(r_shift, r_shift)
+        
+        # Apply parallel axis theorem to shift inertia to new COM
+        self.inertia = self.inertia - self.mass * (r_squared * np.eye(3) - r_outer)
+        
+        # Update inverse inertia
+        self.inv_inertia = np.linalg.inv(self.inertia)
+        
+        # Re-extract geometry with updated COM
+        self.extract_geometry()
+        
+        # Update weight vector
+        self.weight = np.array([0, 0, -self.mass*self.g])
+        
+        # Update control allocation matrix
+        k = self.k_m/self.k_eta
+        self.f_to_TM = np.vstack((np.ones((1,self.num_rotors)),
+                                np.hstack([np.cross(self.rotor_pos[key] - self.com,np.array([0,0,1])).reshape(-1,1)[0:2] 
+                                for key in self.rotor_pos]), 
+                                (k * self.rotor_dir).reshape(1,-1)))
+        self.TM_to_f = np.linalg.inv(self.f_to_TM)
+        
+        # Reset payload parameters
+        self.payload_mass = 0
+        self.payload_position = np.zeros(3)
+        self.payload_inertia = None
+        
+        # Return the COM shift
+        return self.com - previous_com

@@ -86,6 +86,8 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
     # Initialize disturbance states
     force_on = False
     torque_on = False
+    payload_attached = False  # Track if payload is currently attached
+    payload_torque = np.array([0,0,0])
     current_ext_force = np.array([0,0,0])
     current_ext_torque = np.array([0,0,0])
     state[0]['ext_force'] = current_ext_force
@@ -127,13 +129,27 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
                 force_on = not force_on
                 torque_on = not torque_on      
                 # print("Toggled force and torque at time", time[-1])          
+            # Handle payload attachment/detachment only when state changes
+            if (torque_on or force_on) and not payload_attached:
+                # Attach payload only if not already attached
+                vehicle.attach_payload()
+                r_payload = vehicle.payload_position
+                r_payload_to_com = r_payload - vehicle.com
+                g_force = np.array([0, 0, -vehicle.payload_mass * vehicle.g])
+                payload_torque = np.cross(r_payload_to_com, g_force)
+                payload_attached = True
+                # print(f"Attached payload at time {time[-1]}")
+            elif not (torque_on or force_on) and payload_attached:
+                # Detach payload only if currently attached
+                vehicle.detach_payload()
+                payload_torque = np.array([0,0,0])
+                payload_attached = False
+                # print(f"Detached payload at time {time[-1]}")
             current_ext_force = ext_force if force_on else np.array([0,0,0])
-            current_ext_torque = ext_torque if torque_on else np.array([0,0,0])
+            current_ext_torque = ext_torque + payload_torque if torque_on else np.array([0,0,0])
         else:
             current_ext_force = ext_force
             current_ext_torque = ext_torque
-
-        
 
         exit_status = exit_status or safety_exit(world, safety_margin, state[-1], flat[-1], control[-1])
         exit_status = exit_status or normal_exit(time[-1], state[-1])
