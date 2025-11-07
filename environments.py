@@ -184,7 +184,13 @@ class Environment():
         else:
             if not ".csv" in fname:
                 fname = fname + ".csv"
-            path = os.path.join(os.path.dirname(__file__),'data_out',fname)
+            # If fname is an absolute path, use it directly; otherwise save to data_out
+            if os.path.isabs(fname):
+                path = fname
+            else:
+                path = os.path.join(os.path.dirname(__file__),'data_out',fname)
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             dataframe = unpack_sim_data(self.result)
             dataframe.to_csv(path)
 
