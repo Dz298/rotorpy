@@ -30,7 +30,8 @@ class Environment():
                        world        = None,     # The world object
                        estimator    = None,     # estimator object
                        sim_rate     = 100,      # The update frequency of the simulator in Hz
-                       safety_margin = 0.25,    # The radius of the safety region around the robot. 
+                       safety_margin = 0.25,    # The radius of the safety region around the robot.
+                       disturbance_toggle_times = None,  # predetermined times when disturbances should be toggled
                        ):
 
         self.sim_rate = sim_rate
@@ -64,6 +65,8 @@ class Environment():
             self.ext_torque = np.array([0,0,0])
         else:
             self.ext_torque = ext_torque
+        
+        self.disturbance_toggle_times = disturbance_toggle_times
         
         if imu is None:
             # In the event of specified IMU, default to 0 bias with white noise with default parameters as specified below. 
@@ -140,6 +143,7 @@ class Environment():
                                                                                                                     terminate=self.terminate,
                                                                                                                     ext_force=self.ext_force,
                                                                                                                     ext_torque=self.ext_torque,
+                                                                                                                    disturbance_toggle_times=self.disturbance_toggle_times,
                                                                                                                     )
         if verbose:
             # Print relevant statistics or simulator status indicators here

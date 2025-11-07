@@ -16,7 +16,7 @@ class ExitStatus(Enum):
     COLLISION    = 'Failure: Your quadrotor collided with an object.'
 
 def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile, imu, mocap, estimator, t_final, t_step, safety_margin, use_mocap, terminate=None, ext_force=np.array([0,0,0]), ext_torque=np.array([0,0,0]), 
-            enable_random_disturbance=True):
+            disturbance_toggle_times=None):
     """
     Perform a vehicle simulation and return the numerical results.
 
@@ -41,7 +41,7 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
         estimator, an estimator object that provides estimates of a portion or all of the vehicle state.
         ext_force, external force applied to the vehicle, shape=(3,)
         ext_torque, external torque applied to the vehicle, shape=(3,)
-        enable_random_disturbance: bool, whether to randomly toggle disturbances
+        disturbance_toggle_times: list of float, predetermined times when disturbances should be toggled on/off. If None, disturbances are always applied (not toggled).
 
     Outputs:
         time, seconds, shape=(N,)
@@ -90,10 +90,19 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
     payload_torque = np.array([0,0,0])
     current_ext_force = np.array([0,0,0])
     current_ext_torque = np.array([0,0,0])
+    # Store payload mass and position for visualization (before it gets modified by attach/detach)
+    payload_mass_value = vehicle.payload_mass if hasattr(vehicle, 'payload_mass') else 0.0
+    payload_position_value = vehicle.payload_position.copy() if hasattr(vehicle, 'payload_position') and payload_mass_value > 0 else np.array([0.0, 0.0, 0.0])
     state[0]['ext_force'] = current_ext_force
     state[0]['ext_torque'] = current_ext_torque
     state[0]['accel'] = np.array([0,0,0])
     state[0]['gyro'] = np.array([0,0,0])
+    state[0]['payload_attached'] = np.bool_(payload_attached)  # Track payload attachment state for visualization
+    state[0]['payload_mass'] = payload_mass_value  # Store payload mass for visualization
+    
+    # Initialize toggle time tracking
+    toggle_times = disturbance_toggle_times if disturbance_toggle_times is not None else []
+    toggle_index = 0  # Index into toggle_times list
 
     if terminate is None:    # Default exit. Terminate at final position of trajectory.
         normal_exit = traj_end_exit(initial_state, trajectory, using_vio = False)
@@ -121,52 +130,83 @@ def simulate(world, initial_state, vehicle, controller, trajectory, wind_profile
     exit_status = None
 
     while True:
-        # Randomly toggle disturbances if enabled (10% chance to change state)
-        if enable_random_disturbance:
-            a = np.random.random()
-            # print(a)
-            if a < 2*t_step/t_final:  # 2/(t_final*sim_rate) chance to toggle force
-                force_on = not force_on
-                torque_on = not torque_on      
-                # print("Toggled force and torque at time", time[-1])          
-            # Handle payload attachment/detachment only when state changes
-            if (torque_on or force_on) and not payload_attached:
-                # Attach payload only if not already attached
-                vehicle.attach_payload()
-                r_payload = vehicle.payload_position
-                r_payload_to_com = r_payload - vehicle.com
-                g_force = np.array([0, 0, -vehicle.payload_mass * vehicle.g])
-                payload_torque = np.cross(r_payload_to_com, g_force)
-                payload_attached = True
-                # print(f"Attached payload at time {time[-1]}")
-            elif not (torque_on or force_on) and payload_attached:
-                # Detach payload only if currently attached
-                vehicle.detach_payload()
-                payload_torque = np.array([0,0,0])
-                payload_attached = False
-                # print(f"Detached payload at time {time[-1]}")
-            current_ext_force = ext_force if force_on else np.array([0,0,0])
-            current_ext_torque = ext_torque + payload_torque if torque_on else np.array([0,0,0])
-        else:
-            current_ext_force = ext_force
-            current_ext_torque = ext_torque
-
         exit_status = exit_status or safety_exit(world, safety_margin, state[-1], flat[-1], control[-1])
         exit_status = exit_status or normal_exit(time[-1], state[-1])
         exit_status = exit_status or time_exit(time[-1], t_final)
         if exit_status:
             break
         time.append(time[-1] + t_step)
+        
+        # Check if we should toggle disturbances based on predetermined times
+        # Check after updating time so we use the current time
+        should_toggle = False
+        if toggle_times and toggle_index < len(toggle_times):
+            # Check if current time has passed the next toggle time
+            # Handle multiple toggles that may have occurred in one time step
+            while toggle_index < len(toggle_times) and time[-1] >= toggle_times[toggle_index]:
+                should_toggle = not should_toggle  # Toggle for each time that has passed
+                toggle_index += 1
+        
+        # Toggle disturbances if needed
+        if should_toggle:
+            force_on = not force_on
+            torque_on = not torque_on      
+        
+        # Handle payload attachment/detachment
+        # Payload can be toggled independently if it's configured (payload_mass > 0)
+        # When toggle_times exist, payload toggles with force/torque (same toggle state)
+        # This works for both payload-only and force/torque experiments
+        # Use payload_mass_value (stored at start) instead of vehicle.payload_mass
+        # because detach_payload() resets vehicle.payload_mass to 0
+        has_payload = payload_mass_value > 0
+        
+        if has_payload:
+            # Determine if payload should be attached based on toggle state
+            # When toggle_times exist, payload follows the same toggle as force/torque
+            # This means payload attaches when force_on or torque_on is True
+            should_attach_payload = torque_on or force_on
+            
+            if should_attach_payload and not payload_attached:
+                # Attach payload only if not already attached
+                # Restore payload_mass and position if they were reset by detach_payload()
+                if vehicle.payload_mass == 0:
+                    vehicle.payload_mass = payload_mass_value
+                    vehicle.payload_position = payload_position_value.copy()
+                vehicle.attach_payload()
+                r_payload = vehicle.payload_position
+                r_payload_to_com = r_payload - vehicle.com
+                g_force = np.array([0, 0, -vehicle.payload_mass * vehicle.g])
+                payload_torque = np.cross(r_payload_to_com, g_force)
+                payload_attached = True
+            elif not should_attach_payload and payload_attached:
+                # Detach payload only if currently attached
+                vehicle.detach_payload()
+                payload_torque = np.array([0,0,0])
+                payload_attached = False
+        
+        # Apply current disturbances
+        if toggle_times:
+            # Toggle disturbances on/off based on predetermined times
+            current_ext_force = ext_force if force_on else np.array([0,0,0])
+            current_ext_torque = ext_torque + payload_torque if torque_on else np.array([0,0,0])
+        else:
+            # No toggling - always apply disturbances if they are non-zero
+            current_ext_force = ext_force
+            current_ext_torque = ext_torque
         state[-1]['wind'] = wind_profile.update(time[-1], state[-1]['x'])
         # Update state with current disturbances
         state[-1]['ext_force'] = current_ext_force
         state[-1]['ext_torque'] = current_ext_torque
+        state[-1]['payload_attached'] = np.bool_(payload_attached)  # Track payload attachment state for visualization
+        state[-1]['payload_mass'] = payload_mass_value  # Store payload mass for visualization
         state.append(vehicle.step(state[-1], control[-1], t_step))
         state[-1]['accel'] = imu_gt[-1]['accel']
         state[-1]['gyro'] = imu_gt[-1]['gyro']
         # Update state with current disturbances
         state[-1]['ext_force'] = current_ext_force
         state[-1]['ext_torque'] = current_ext_torque
+        state[-1]['payload_attached'] = np.bool_(payload_attached)  # Track payload attachment state for visualization
+        state[-1]['payload_mass'] = payload_mass_value  # Store payload mass for visualization
         flat.append(trajectory.update(time[-1]))
         mocap_measurements.append(mocap.measurement(state[-1], with_noise=True, with_artifacts=mocap.with_artifacts))
         state_estimate.append(estimator.step(state[-1], control[-1], imu_measurements[-1], mocap_measurements[-1]))
